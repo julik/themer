@@ -1,0 +1,87 @@
+== So... Themer. What is that thing for?
+
+For something blatantly called "theming", or "Template lookup at runtime" if you will.
+
+Unfortunately all options for implementing this currently are absolutely unusable, too hackish or
+too inflexible. For background, read:
+
+http://weblog.techno-weenie.net/2005/11/4/more_on_per_request_template_roots_in_actionpack
+http://dev.rubyonrails.org/ticket/8582
+http://dev.rubyonrails.org/ticket/7889
+
+Exactly one of the cases when you don't want to follow the Rails Way because such a way is well, absent.
+There are theming plugins, all of them hack ActionView in one way or another and all of them get obsolete very fast.
+
+== The solution
+
+Obviously, to make our own theming plugin. It leaves ActionView and friends alone and implement a template lookup system on top
+of standard Rails rendering pipeline (it _does_ rely on specific behavior with regards to path lookup in ActionView, and this
+behavior is _not_ quite intuitive, but it's a public tested behavior nevertheless).
+
+== Usage
+
+Consider you have a site which has a "theme" field. Then you have a "themes" directory
+under your /app dir.
+
+    class ThemedController < ApplicationController
+      before_filter :select_theme
+      
+      private
+        def select_theme
+          # Lets assume the site called 'snow' is being requested
+          @site = Site.find_by_domain(request.host)
+          @themer = Themer::Base.new :special_subdir => @site.domain
+        end
+    end
+
+Like this you create a template lookup object that will search for templates in
+this directory. After that, when you need to render, call
+
+  render :action => 'view_post', :themer => @themer
+  
+The object will then look for a suitable layout under the following directories:
+
+  RAILS_ROOT/app/views-per-site/snow/layouts/layout.rhtml
+  RAILS_ROOT/app/views-per-site/_base/layouts/layout.rhtml
+
+Same will happen with partials and actions - just pass your usual options to +render+
+
+Note that the default themer implementation does not take the controller into account, if you need
+that functionality you will have to write your own Themer.
+
+== The pros
+
+This has a number of advantages. First, it takes special files over shared ones
+(in contrast to Rails, which does the reverse) - so you can "overlay" specific
+templates per theme. Secondly, the template lookup class is customizable.
+You can implement a template lookup that is dependent on the current time of day, for example. Or you can
+flush your templates stored in the database to disk and go from there. It's more flexible
+than render :inline because you will get cached templates.
+
+There is also much less chance of the thing breaking because we just use public APIs here.
+
+All the file lookups performed will be cached (you won't be globbing all anew all the time). If you got a directory
+chock full of templates which have to be shuffled in the middle of the lifetime of the application, do
+
+  Themer::Base.flush_cache!
+  
+to flush the cached lookups (for all Themers), or create the Themer with cache_results set to false
+
+And besides we call out to standard template rendering engine of Rails, so all custom templates and options just continue working
+
+== Compatibility
+
+Themer is compatible with all Rails versions.
+
+== Tip: time-based theming
+    
+    class CalendarController < ApplicationController
+      def index
+        day_for_night = Themer::Base.new (Time.now.convert_to_users_timezone.hours > 12 ? "day" : "night")
+        render :themer => day_for_night
+      end
+    end
+
+== Support
+
+me[at]julik[dot]nl (support will be provided as time permits)
